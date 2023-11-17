@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract Aryton is ERC20, Ownable {
-    uint160 private constant MAX_TOTAL_SUPPLY = 75000000 ether;
+    uint160 private constant MAX_TOTAL_SUPPLY = 400000000 ether;
     string private _latestSale = "FRIEND_FAMILY";
 
     /** track wallet and supply assigned to a particular supply */

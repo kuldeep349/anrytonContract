@@ -240,7 +240,7 @@ contract Stake is Sales, ReentrancyGuard {
         uint232 _amount,
         uint256 _currentTime
     ) private returns (bool) {
-        uint48 _count = ++users[msg.sender].totalLocks;
+        uint48 _count = ++users[_to].totalLocks;
         /** set stakedAt, unStakedAt time and amount */
         lockings[_to][_count].lockedAt = _currentTime;
         lockings[_to][_count].unLockedAt = _currentTime + 2 seconds;
@@ -279,17 +279,22 @@ contract Stake is Sales, ReentrancyGuard {
     ) private returns (bool) {
         uint256 _maturedAmt = 0;
         uint256 _withdrawnAmt = 0;
+        uint256 _beforeUnstakedAmt = 0;
 
         for (uint256 m = 13; m <= 18; m++) {
             _withdrawnAmt = 0;
+
             for (uint256 i = 1; i <= users[_user].totalStakes; i++) {
                 Staking memory userStaking = stakings[_user][i];
+
                 if (!userStaking.isUnstaked) {
-                    uint256 releasedAmt = _getMaturedStakeAmt(
-                        m,
-                        _currentTime,
-                        userStaking
-                    );
+                    if (m == 13)
+                        _beforeUnstakedAmt = userStaking.unStakedAmount;
+
+                    (
+                        uint256 releasedAmt,
+                        bool isUnstaked
+                    ) = _getMaturedStakeAmt(m, _currentTime, userStaking);
 
                     if (releasedAmt > 0) {
                         uint256 profit = mulDiv(
@@ -298,13 +303,14 @@ contract Stake is Sales, ReentrancyGuard {
                             1000
                         );
 
-                        releasedAmt += profit;
+                        _maturedAmt += releasedAmt + profit;
+                        _withdrawnAmt += _beforeUnstakedAmt;
                         stakings[_user][i].unStakedAmount += uint160(
-                            releasedAmt
+                            releasedAmt + profit
                         );
-                        if (m == 18) stakings[_user][i].isUnstaked = true;
-                        _maturedAmt += releasedAmt;
-                        _withdrawnAmt += userStaking.unStakedAmount;
+
+                        if (isUnstaked == true)
+                            stakings[_user][i].isUnstaked = isUnstaked;
                     }
                 }
             }
@@ -352,6 +358,7 @@ contract Stake is Sales, ReentrancyGuard {
     function getMaturedStakedAmt(address user) public view returns (uint256) {
         uint256 maturedAmt = 0;
         uint256 withdrawnAmt = 0;
+        uint256 _beforeUnstakedAmt = 0;
         uint256 currentTime = block.timestamp;
 
         for (uint256 m = 13; m <= 18; m++) {
@@ -359,21 +366,27 @@ contract Stake is Sales, ReentrancyGuard {
 
             for (uint256 i = 1; i <= users[user].totalStakes; i++) {
                 Staking memory userStaking = stakings[user][i];
-                uint256 releasedAmt = _getMaturedStakeAmt(
-                    m,
-                    currentTime,
-                    userStaking
-                );
 
-                if (releasedAmt > 0) {
-                    uint256 profit = mulDiv(
-                        releasedAmt,
-                        stakingPercentage,
-                        1000
+                if (!userStaking.isUnstaked) {
+                    if (m == 13)
+                        _beforeUnstakedAmt = userStaking.unStakedAmount;
+
+                    (uint256 releasedAmt, ) = _getMaturedStakeAmt(
+                        m,
+                        currentTime,
+                        userStaking
                     );
-                    releasedAmt += profit;
-                    maturedAmt += releasedAmt;
-                    withdrawnAmt += userStaking.unStakedAmount;
+
+                    if (releasedAmt > 0) {
+                        uint256 profit = mulDiv(
+                            releasedAmt,
+                            stakingPercentage,
+                            1000
+                        );
+                        
+                        maturedAmt += releasedAmt + profit;
+                        withdrawnAmt += _beforeUnstakedAmt;
+                    }
                 }
             }
         }
@@ -390,17 +403,19 @@ contract Stake is Sales, ReentrancyGuard {
         uint256 m,
         uint256 currentTime,
         Staking memory userStaking
-    ) private pure returns (uint256) {
+    ) private pure returns (uint256, bool) {
         uint256 _amount = 0;
+        bool _isUnstaked = false;
         /** 5 sec === 1 month */
         uint256 endTime = userStaking.stakedAt + (m * 5);
 
         if (currentTime > endTime) {
             uint256 unStakePerMonth = userStaking.stakeAmount / 6;
             _amount += unStakePerMonth;
+            if (m == 18) _isUnstaked = true;
         }
 
-        return _amount;
+        return (_amount, _isUnstaked);
     }
 
     /***
@@ -566,11 +581,12 @@ contract Stake is Sales, ReentrancyGuard {
     ) private pure returns (uint256) {
         uint _amount = 0;
         uint8 age = 0;
-        if (_m > 18) age = 1;
-        else if (_m > 24) age = 2;
-        else if (_m > 30) age = 3;
+
+        if (_m == 42) age = 5;
         else if (_m > 36) age = 4;
-        else if (_m == 42) age = 5;
+        else if (_m > 30) age = 3;
+        else if (_m > 24) age = 2;
+        else if (_m > 18) age = 1;
 
         if (age > 0) {
             _amount = mulDiv(_depositedAmt, 20, 100);
