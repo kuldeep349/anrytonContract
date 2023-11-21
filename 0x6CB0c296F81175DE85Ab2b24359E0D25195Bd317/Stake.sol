@@ -28,7 +28,7 @@ contract Stake is Sales, ReentrancyGuard {
     }
 
     struct UserInfo {
-        uint184 tokenBalance;
+        uint184 tokenDeposits;
         uint184 withdrawTokens;
         uint128 stakedTokens;
         uint128 lockedTokens;
@@ -116,18 +116,19 @@ contract Stake is Sales, ReentrancyGuard {
             for (uint256 i = 1; i <= users[msg.sender].totalDeposits; i++) {
                 Deposit memory userDeposit = deposits[msg.sender][i];
                 if (!userDeposit.isMatured) {
-                    (uint256 _vestedAmt, bool _isMatured) = _vesting(
-                        m,
-                        currentTime,
-                        userDeposit
-                    );
+                    (
+                        uint256 _vestedAmt,
+                        uint256 _tokenWithdrawn,
+                        bool _isMatured
+                    ) = _vesting(m, currentTime, userDeposit);
 
                     if (_vestedAmt > 0) {
                         _maturedAmt += _vestedAmt;
-                        _withdrawnAmt += userDeposit.withdrawAmount;
+                        _withdrawnAmt += _tokenWithdrawn;
                         deposits[msg.sender][i].withdrawAmount += uint160(
                             _vestedAmt
                         );
+
                         if (_isMatured)
                             deposits[msg.sender][i].isMatured = true;
                     }
@@ -154,7 +155,7 @@ contract Stake is Sales, ReentrancyGuard {
         uint208 _amount,
         string memory _action
     ) private amountZero(_amount) addressZero(_user) {
-        uint256 balance = users[_user].tokenBalance;
+        uint256 balance = users[_user].tokenDeposits;
         if (_compareEqual(_action, "DEPOSIT")) {
             balance += _amount;
             _deposti(_user, _amount);
@@ -163,7 +164,7 @@ contract Stake is Sales, ReentrancyGuard {
             users[_user].withdrawTokens += uint184(_amount);
         }
 
-        users[_user].tokenBalance = uint184(balance);
+        users[_user].tokenDeposits = uint184(balance);
         emit DepositWithdraw(_user, _amount, _action);
     }
 
@@ -383,7 +384,7 @@ contract Stake is Sales, ReentrancyGuard {
                             stakingPercentage,
                             1000
                         );
-                        
+
                         maturedAmt += releasedAmt + profit;
                         withdrawnAmt += _beforeUnstakedAmt;
                     }
@@ -437,20 +438,7 @@ contract Stake is Sales, ReentrancyGuard {
         string memory a,
         string memory b
     ) private pure returns (bool) {
-        return (bytes(a).length == bytes(b).length);
-    }
-
-    /***
-     * @function getLeftBalance
-     * @dev get left amount after staked or locked amount
-     * @notice publically readable
-     */
-    function getLeftBalance(address user) public view returns (uint) {
-        UserInfo memory finance = users[user];
-        /** get total staked and locked tokens and add them to deduct from tokenBalance */
-        uint256 balance = finance.stakedTokens + finance.lockedTokens;
-        balance = finance.tokenBalance - balance;
-        return balance;
+        return (keccak256(bytes(a)) == keccak256(bytes(b)));
     }
 
     /***
@@ -468,14 +456,14 @@ contract Stake is Sales, ReentrancyGuard {
             for (uint256 i = 1; i <= users[user].totalDeposits; i++) {
                 Deposit memory userDeposit = deposits[user][i];
                 if (!userDeposit.isMatured) {
-                    (uint256 _vestedAmt, ) = _vesting(
+                    (uint256 _vestedAmt, uint256 _tokenWithdrawn, ) = _vesting(
                         m,
                         currentTime,
                         userDeposit
                     );
                     if (_vestedAmt > 0) {
                         maturedAmt += _vestedAmt;
-                        withdrawnAmt += userDeposit.withdrawAmount;
+                        withdrawnAmt += _tokenWithdrawn;
                     }
                 }
             }
@@ -495,9 +483,10 @@ contract Stake is Sales, ReentrancyGuard {
         uint256 _m,
         uint256 _currentTime,
         Deposit memory _userDeposit
-    ) private pure returns (uint256, bool) {
+    ) private pure returns (uint256, uint256, bool) {
         uint256 _amount = 0;
         uint256 _tgcAmount = 0;
+        uint256 _tokenWithdrawn = 0;
         bool _isMatured = false;
 
         /** cliff calculation */
@@ -509,47 +498,54 @@ contract Stake is Sales, ReentrancyGuard {
         uint256 endTime = _userDeposit.depositedAt + (_m * 5);
         // uint256 endTime = userDeposit.depositedAt + (m * 30 * 24 * 60 * 60);
         if (_currentTime > endTime) {
-            _userDeposit.depositAmount -= uint160(_tgcAmount);
+        _userDeposit.depositAmount -= uint160(_tgcAmount);
 
-            /** check if sale is "PUBLIC_SALE" OR "PRIVATE_SALE" */
-            if (
-                _compareEqual(_userDeposit.sale, "FAMILY_FRIEND") ||
-                _compareEqual(_userDeposit.sale, "PRIVATE_SALE") ||
-                _compareEqual(_userDeposit.sale, "PUBLIC_SALE")
-            ) {
+        /** check if sale is "PUBLIC_SALE" OR "PRIVATE_SALE" */
+        if (
+            _compareEqual(_userDeposit.sale, "FRIEND_FAMILY") ||
+            _compareEqual(_userDeposit.sale, "PRIVATE_SALE") ||
+            _compareEqual(_userDeposit.sale, "PUBLIC_SALE")
+        ) {
+            if ((_m >= 7) && (_m <= 18)) {
+                if (_m == 7) _tokenWithdrawn = _userDeposit.withdrawAmount;
+                _amount += _userDeposit.depositAmount / 12;
                 if (_m == 18) _isMatured = true;
-                if ((_m >= 7) && (_m <= 18))
-                    _amount += _userDeposit.depositAmount / 12;
-            }
-
-            /** check if sale is "TEAM" OR "ADVISORS" */
-            if (
-                _compareEqual(_userDeposit.sale, "TEAM") ||
-                _compareEqual(_userDeposit.sale, "ADVISORS")
-            ) {
-                if (_m == 36) _isMatured = true;
-                if ((_m >= 13) && (_m <= 36))
-                    _amount += _userDeposit.depositAmount / 24;
-            }
-
-            /** check if sale is "RESERVES" OR "STORAGE_MINTING_ALLOCATION" */
-            if (
-                _compareEqual(_userDeposit.sale, "RESERVES") ||
-                _compareEqual(_userDeposit.sale, "STORAGE_MINTING_ALLOCATION")
-            ) {
-                if (_m == 36) _isMatured = true;
-                if ((_m >= 25) && (_m <= 36))
-                    _amount += _userDeposit.depositAmount / 12;
-            }
-
-            /** Getting value for MARKETTING */
-            if (_compareEqual(_userDeposit.sale, "MARKETTING")) {
-                if (_m == 42) _isMatured = true;
-                _amount += _calcMarketting(_m, _userDeposit.depositAmount);
             }
         }
 
-        return (_amount, _isMatured);
+        /** check if sale is "TEAM" OR "ADVISORS" */
+        if (
+            _compareEqual(_userDeposit.sale, "TEAM") ||
+            _compareEqual(_userDeposit.sale, "ADVISORS")
+        ) {
+            if ((_m >= 13) && (_m <= 36)) {
+                if (_m == 13) _tokenWithdrawn = _userDeposit.withdrawAmount;
+                _amount += _userDeposit.depositAmount / 24;
+                if (_m == 36) _isMatured = true;
+            }
+        }
+
+        /** check if sale is "RESERVES" OR "STORAGE_MINTING_ALLOCATION" */
+        if (
+            _compareEqual(_userDeposit.sale, "RESERVES") ||
+            _compareEqual(_userDeposit.sale, "STORAGE_MINTING_ALLOCATION")
+        ) {
+            if ((_m >= 25) && (_m <= 36)) {
+                if (_m == 25) _tokenWithdrawn = _userDeposit.withdrawAmount;
+                _amount += _userDeposit.depositAmount / 12;
+                if (_m == 36) _isMatured = true;
+            }
+        }
+
+        /** Getting value for MARKETTING */
+        if (_compareEqual(_userDeposit.sale, "MARKETTING")) {
+            if (_m == 18) _tokenWithdrawn = _userDeposit.withdrawAmount;
+            _amount += _calcMarketting(_m, _userDeposit.depositAmount);
+            if (_m == 42) _isMatured = true;
+        }
+        }
+
+        return (_amount, _tokenWithdrawn, _isMatured);
     }
 
     /***
@@ -583,16 +579,12 @@ contract Stake is Sales, ReentrancyGuard {
         uint8 age = 0;
 
         if (_m == 42) age = 5;
-        else if (_m > 36) age = 4;
-        else if (_m > 30) age = 3;
-        else if (_m > 24) age = 2;
-        else if (_m > 18) age = 1;
+        else if (_m == 36) age = 4;
+        else if (_m == 30) age = 3;
+        else if (_m == 24) age = 2;
+        else if (_m == 18) age = 1;
 
-        if (age > 0) {
-            _amount = mulDiv(_depositedAmt, 20, 100);
-            _amount = _amount * age;
-        }
-
+        if (age > 0) _amount = mulDiv(_depositedAmt, 20, 100);
         return _amount;
     }
 
