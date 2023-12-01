@@ -28,7 +28,7 @@ contract Stake is Sales, ReentrancyGuard {
     }
 
     struct UserInfo {
-        uint184 tokenDeposits;
+        uint184 tokenBalance;
         uint184 withdrawTokens;
         uint128 stakedTokens;
         uint128 lockedTokens;
@@ -52,7 +52,6 @@ contract Stake is Sales, ReentrancyGuard {
         uint256 indexed amount,
         string indexed action
     );
-    event WhitelistTeamFriends(address indexed user, string indexed role);
     event StakedTokens(
         address indexed user,
         uint256 indexed amount,
@@ -155,16 +154,16 @@ contract Stake is Sales, ReentrancyGuard {
         uint208 _amount,
         string memory _action
     ) private amountZero(_amount) addressZero(_user) {
-        uint256 balance = users[_user].tokenDeposits;
+        uint256 balance = users[_user].tokenBalance;
         if (_compareEqual(_action, "DEPOSIT")) {
             balance += _amount;
-            _deposti(_user, _amount);
+            _deposit(_user, _amount);
         } else if (_compareEqual(_action, "WITHDRAW")) {
             balance -= _amount;
             users[_user].withdrawTokens += uint184(_amount);
         }
 
-        users[_user].tokenDeposits = uint184(balance);
+        users[_user].tokenBalance = uint184(balance);
         emit DepositWithdraw(_user, _amount, _action);
     }
 
@@ -172,7 +171,7 @@ contract Stake is Sales, ReentrancyGuard {
      * @function _deposit
      * @dev adding info of each time deposit
      */
-    function _deposti(address _user, uint208 _amount) private {
+    function _deposit(address _user, uint208 _amount) private {
         uint256 _latestSale = getLatestSaleCount();
         uint48 _count = ++users[_user].totalDeposits;
         deposits[_user][_count].depositAmount = _amount;
@@ -439,6 +438,19 @@ contract Stake is Sales, ReentrancyGuard {
         string memory b
     ) private pure returns (bool) {
         return (keccak256(bytes(a)) == keccak256(bytes(b)));
+    }
+
+    /***
+     * @function getLeftBalance
+     * @dev get left amount after staked or locked amount
+     * @notice publically readable
+     */
+    function getLeftBalance(address user) public view returns (uint) {
+        UserInfo memory finance = users[user];
+        /** get total staked and locked tokens and add them to deduct from tokenBalance */
+        uint256 balance = finance.stakedTokens + finance.lockedTokens;
+        balance = finance.tokenBalance - balance;
+        return balance;
     }
 
     /***

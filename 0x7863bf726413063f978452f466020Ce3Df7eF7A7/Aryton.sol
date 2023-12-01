@@ -5,12 +5,21 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract Aryton is ERC20, Ownable {
+    
+    struct MintingSale {
+        string name;
+        uint160 supply;
+        address walletAddress;
+    }
+
     uint160 private constant MAX_TOTAL_SUPPLY = 400000000 ether;
     string private _latestSale = "FRIEND_FAMILY";
+    uint8 public mintingCounter = 0;
 
     /** track wallet and supply assigned to a particular supply */
     mapping(string => address) private assignedWalletToSale;
     mapping(string => mapping(address => uint256)) private mintedWalletSupply;
+    mapping(uint => MintingSale) public mintedSale;
 
     event MintedWalletSuupply(
         string indexed sale,
@@ -20,10 +29,53 @@ contract Aryton is ERC20, Ownable {
 
     constructor(
         string memory _tokenName,
-        string memory _tokenSymbol,
-        uint256 _supply
+        string memory _tokenSymbol
     ) ERC20(_tokenName, _tokenSymbol) Ownable(msg.sender) {
-        mint(_latestSale, msg.sender, _supply);
+        _setCommissions(msg.sender);
+    }
+
+    function _setCommissions(address _owner) private {
+        _calcSaleSupply(1, "FRIEND_FAMILY", _owner, 12000000 ether);
+        _calcSaleSupply(2, "PRIVATE_SALE", _owner, 24000000 ether);
+        _calcSaleSupply(3, "PUBLIC_SALE", _owner, 24000000 ether);
+        _calcSaleSupply(4, "TEAM", _owner, 40000000 ether);
+        _calcSaleSupply(5, "RESERVES", _owner, 100000000 ether);
+        _calcSaleSupply(
+            6,
+            "STORAGE_MINTING_ALLOCATION",
+            _owner,
+            40000000 ether
+        );
+        _calcSaleSupply(7, "GRANTS_REWARD", _owner, 80000000 ether);
+        _calcSaleSupply(8, "MARKETTING", _owner, 40000000 ether);
+        _calcSaleSupply(9, "ADVISORS", _owner, 12000000 ether);
+        _calcSaleSupply(
+            10,
+            "LIQUIDITY_EXCHANGE_LISTING",
+            _owner,
+            20000000 ether
+        );
+        _calcSaleSupply(11, "STAKING", _owner, 8000000 ether);
+
+        /** mint once every partician is done
+         * First sale will be get minted "FRIEND_FAMILY"
+         */
+        mint();
+    }
+
+    /***
+     * @function _calcSaleSupply
+     * @dev defining sales in a contract
+     */
+    function _calcSaleSupply(
+        uint8 serial,
+        string memory _name,
+        address _walletAddress,
+        uint160 _supply
+    ) private {
+        mintedSale[serial].name = _name;
+        mintedSale[serial].supply = _supply;
+        mintedSale[serial].walletAddress = _walletAddress;
     }
 
     /***
@@ -31,28 +83,26 @@ contract Aryton is ERC20, Ownable {
      * @dev mint token on a owner address
      * @notice onlyOwner can access this function
      */
-    function mint(
-        string memory saleName,
-        address walletAddress,
-        uint256 supply
-    ) public onlyOwner {
+    function mint() public onlyOwner {
+        uint8 saleCount = ++mintingCounter;
+        MintingSale memory mintingSale = mintedSale[saleCount];
         /** Validate amount and address should be greater than zero */
-        require(supply > 0, "ERC20:: Mint amount should be greater than zero");
         require(
-            walletAddress != address(0),
+            mintingSale.supply > 0,
+            "ERC20:: Mint amount should be greater than zero"
+        );
+        require(
+            mintingSale.walletAddress != address(0),
             "ERC20:: user should not be equal to address zero"
         );
 
-        /** Calc pending supply */
-        uint160 _pendingSupply = MAX_TOTAL_SUPPLY - uint160(totalSupply());
-        require(
-            supply < _pendingSupply,
-            "ERC20:: Mint amount should not be greater than 75 million."
-        );
-
         /** Mint and set default sale supply */
-        _mint(walletAddress, supply);
-        _setSaleSupplyWallet(saleName, walletAddress, supply);
+        _mint(mintingSale.walletAddress, mintingSale.supply);
+        _setSaleSupplyWallet(
+            mintingSale.name,
+            mintingSale.walletAddress,
+            mintingSale.supply
+        );
     }
 
     /***
